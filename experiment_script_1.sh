@@ -36,4 +36,4 @@ logfile=$logdir/experiment_script_1.txt
 > $logfile
 
 # start training
-python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --batchsize 128 --lr 0.1 --lr-decay 0.5 --lr-decay-epoch 40,80,120,160,200 --epochs 200 --seed 337 --max-delay 5 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
+python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --batchsize 128 --lr 0.1 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 5 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
