@@ -30,9 +30,15 @@ parser.add_argument("--lr-decay-epoch", type=str, help="lr decay epoch", default
 parser.add_argument("--momentum", type=float, help="momentum", default=0)
 parser.add_argument("--log", type=str, help="dir of the log file", default='train_cifar100.log')
 parser.add_argument("--classes", type=int, help="number of classes", default=20)
+parser.add_argument("--nworkers", type=int, help="number of workers", default=20)
+parser.add_argument("--nbyz", type=int, help="number of Byzantine workers", default=2)
+parser.add_argument("--b", type=int, help="number of trimmed workers", default=2)
 parser.add_argument("--model", type=str, help="model", default='mobilenetv2_1.0')
 parser.add_argument("--seed", type=int, help="random seed", default=733)
 parser.add_argument("--max-delay", type=int, help="maximum of global delay", default=10)
+parser.add_argument("--byz-test", type=str, help="none, kardam, zeno+, or zeno++", choices=['none', 'kardam', 'zeno+', 'zeno++'], default='none')
+parser.add_argument("--rho", type=float, help="rho", default=0.01)
+parser.add_argument("--epsilon", type=float, help="epsilon", default=0)
  
 args = parser.parse_args()
 
@@ -88,9 +94,9 @@ if model_name == 'default':
         #  Second convolutional layer
         # net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
         # Third convolutional layer
-        net.add(gluon.nn.Conv2D(channels=128, kernel_size=3, padding=(1,1), activation='relu'))
+        net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
         net.add(gluon.nn.BatchNorm())
-        net.add(gluon.nn.Conv2D(channels=128, kernel_size=3, padding=(1,1), activation='relu'))
+        net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
         net.add(gluon.nn.BatchNorm())
         net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
         net.add(gluon.nn.Dropout(rate=0.25))
@@ -110,10 +116,11 @@ else:
     net = get_model(model_name, **model_kwargs)
 
 # initialization
-if model_name.startswith('cifar') or model_name == 'default':
-    net.initialize(mx.init.Xavier(), ctx=context)
-else:
-    net.initialize(mx.init.MSRAPrelu(), ctx=context)
+# if model_name.startswith('cifar') or model_name == 'default':
+#     net.initialize(mx.init.Xavier(), ctx=context)
+# else:
+#     net.initialize(mx.init.MSRAPrelu(), ctx=context)
+net.initialize(mx.init.MSRAPrelu(), ctx=context)
 
 # # no weight decay
 # for k, v in net.collect_params('.*beta|.*gamma|.*bias').items():
@@ -168,6 +175,11 @@ params_prev_list = [params_prev]
 
 nd.waitall()
 
+if args.byz_test == 'kardam':
+    grads_list = []
+    lips_list = []
+    quantile_q = (args.nworkers-args.b) / args.nworkers
+
 sum_delay = 0
 tic = time.time()
 for epoch in range(args.epochs):
@@ -182,6 +194,10 @@ for epoch in range(args.epochs):
 
     # training
     for i, (data, label) in enumerate(train_data):
+        # byzantine
+        if args.nbyz > 0:
+            if random.uniform(0,1) <= args.nbyz * 1.0 / args.nworkers:
+                label = args.classes - 1 - label
         # obtain previous model
         model_idx = random.randint(0, len(params_prev_list)-1)
         params_prev = params_prev_list[model_idx]
@@ -194,24 +210,63 @@ for epoch in range(args.epochs):
             outputs = net(data)
             loss = loss_func(outputs, label)
         loss.backward()
+        
+
+        if args.byz_test == 'kardam':
+            byz_flag = True
+            if len(grad_list) > (args.nworkers // 3):
+                accumulate_param = 0
+                accumulate_grad = 0
+                if model_idx != len(params_prev_list)-1:
+                    grads_prev = grads_list[-1]
+                    params_prev = params_prev_list[-1]
+                else:
+                    grads_prev = grads_list[-2]
+                    params_prev = params_prev_list[-2]
+                for param, param_prev, grad_prev in zip(net.collect_params().values(), params_prev, grads_prev):
+                    if param.grad_req != 'null':
+                        grad_current = param.grad()
+                        param_current = param.data()
+                        accumulate_param = accumulate_param + nd.square(param_current - param_prev).sum()
+                        accumulate_grad = accumulate_grad + nd.square(grad_current - grad_prev).sum()
+                lips = math.sqrt(accumulate_grad.asscalar()) / math.sqrt(accumulate_param.asscalar())
+                if lips <= np.quantile(lips_list, quantile_q):
+                    byz_flag = False
+                nd.waitall()
+        else:
+            byz_flag = False
+            
         # bring back the current model
         params_prev = params_prev_list[-1]
         for param, param_prev in zip(net.collect_params().values(), params_prev):
             if param.grad_req != 'null':
                 weight = param.data()
                 weight[:] = param_prev
-        # update
-        trainer.step(args.batchsize)
 
-        nd.waitall()
+        # byz test
+        if byz_flag == False:
+            # update
+            # adaptive lr
+            # trainer.set_learning_rate(lr / math.sqrt(len(params_prev_list) - model_idx)) 
+            trainer.step(args.batchsize)
 
-        # save model to queue
-        params_prev_list.append([param.data().copy() for param in net.collect_params().values()])
+            nd.waitall()
 
-        if len(params_prev_list) > args.max_delay:
-            del params_prev_list[0]
-    
-        nd.waitall()
+            # save model to queue
+            params_prev_list.append([param.data().copy() for param in net.collect_params().values()])
+            if len(params_prev_list) > args.max_delay:
+                del params_prev_list[0]
+
+            if args.byz_test == 'kardam':
+                grads_list.append([param.grad().copy() for param in net.collect_params().values()])
+                lips_list.append(lips)
+                if len(grads_list) > args.max_delay:
+                    del grads_list[0]
+                    del lips_list[0]
+
+            
+        
+            nd.waitall()
 
     
     # validation
