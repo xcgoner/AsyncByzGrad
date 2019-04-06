@@ -247,7 +247,7 @@ for epoch in range(args.epochs):
         if byz_flag == False:
             # update
             # adaptive lr
-            # trainer.set_learning_rate(lr / math.sqrt(len(params_prev_list) - model_idx)) 
+            trainer.set_learning_rate(lr / math.sqrt(len(params_prev_list) - model_idx)) 
             trainer.step(args.batchsize)
 
             nd.waitall()
