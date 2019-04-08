@@ -32,8 +32,14 @@ parser.add_argument("--log", type=str, help="dir of the log file", default='trai
 parser.add_argument("--classes", type=int, help="number of classes", default=20)
 parser.add_argument("--nworkers", type=int, help="number of workers", default=20)
 parser.add_argument("--nbyz", type=int, help="number of Byzantine workers", default=2)
-parser.add_argument("--byz-type", type=str, help="type of Byzantine workers", choices=['labelflip', 'signflip'], default='labelflip')
+parser.add_argument("--byz-type", type=str, help="type of Byzantine workers", choices=['none', 'labelflip', 'signflip'], default='labelflip')
+parser.add_argument("--byz-param-a", type=float, help="hyperparameter of Byzantine workers", default=10)
+parser.add_argument("--byz-param-b", type=float, help="hyperparameter of Byzantine workers", default=10)
+parser.add_argument("--byz-param-c", type=float, help="hyperparameter of Byzantine workers", default=10)
 parser.add_argument("--b", type=int, help="number of trimmed workers", default=2)
+parser.add_argument("--rho", type=float, help="rho of zeno", default=0)
+parser.add_argument("--epsilon", type=float, help="epsilon of zeno", default=0)
+parser.add_argument("--zeno-delay", type=int, help="delay of zeno", default=10)
 parser.add_argument("--model", type=str, help="model", default='mobilenetv2_1.0')
 parser.add_argument("--seed", type=int, help="random seed", default=733)
 parser.add_argument("--max-delay", type=int, help="maximum of global delay", default=10)
@@ -80,50 +86,54 @@ def load_data(train_filename):
     dataset = mx.gluon.data.dataset.ArrayDataset(data[0], data[1])
     return dataset
 
+def load_model(model_name):
+    if model_name == 'default':
+        net = gluon.nn.Sequential()
+        with net.name_scope():
+            #  First convolutional layer
+            net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            net.add(gluon.nn.BatchNorm())
+            net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            net.add(gluon.nn.BatchNorm())
+            net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
+            net.add(gluon.nn.Dropout(rate=0.25))
+            #  Second convolutional layer
+            # net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
+            # Third convolutional layer
+            net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            net.add(gluon.nn.BatchNorm())
+            net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            net.add(gluon.nn.BatchNorm())
+            net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
+            net.add(gluon.nn.Dropout(rate=0.25))
+            # net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            # net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            # net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
+            # net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
+            # Flatten and apply fullly connected layers
+            net.add(gluon.nn.Flatten())
+            # net.add(gluon.nn.Dense(512, activation="relu"))
+            # net.add(gluon.nn.Dense(512, activation="relu"))
+            net.add(gluon.nn.Dense(128, activation="relu"))
+            net.add(gluon.nn.Dense(128, activation="relu"))
+            net.add(gluon.nn.Dropout(rate=0.25))
+            net.add(gluon.nn.Dense(classes))
+    else:
+        model_kwargs = {'ctx': context, 'pretrained': False, 'classes': classes}
+        net = get_model(model_name, **model_kwargs)
+
+    # initialization
+    # if model_name.startswith('cifar') or model_name == 'default':
+    #     net.initialize(mx.init.Xavier(), ctx=context)
+    # else:
+    #     net.initialize(mx.init.MSRAPrelu(), ctx=context)
+    # net.initialize(mx.init.MSRAPrelu(), ctx=context)
+    net.initialize(mx.init.Xavier(), ctx=context)
+    return net
+
 model_name = args.model
 
-if model_name == 'default':
-    net = gluon.nn.Sequential()
-    with net.name_scope():
-        #  First convolutional layer
-        net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        net.add(gluon.nn.BatchNorm())
-        net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        net.add(gluon.nn.BatchNorm())
-        net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
-        net.add(gluon.nn.Dropout(rate=0.25))
-        #  Second convolutional layer
-        # net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
-        # Third convolutional layer
-        net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        net.add(gluon.nn.BatchNorm())
-        net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        net.add(gluon.nn.BatchNorm())
-        net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
-        net.add(gluon.nn.Dropout(rate=0.25))
-        # net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        # net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        # net.add(gluon.nn.Conv2D(channels=64, kernel_size=3, padding=(1,1), activation='relu'))
-        # net.add(gluon.nn.MaxPool2D(pool_size=2, strides=2))
-        # Flatten and apply fullly connected layers
-        net.add(gluon.nn.Flatten())
-        # net.add(gluon.nn.Dense(512, activation="relu"))
-        # net.add(gluon.nn.Dense(512, activation="relu"))
-        net.add(gluon.nn.Dense(128, activation="relu"))
-        net.add(gluon.nn.Dense(128, activation="relu"))
-        net.add(gluon.nn.Dropout(rate=0.25))
-        net.add(gluon.nn.Dense(classes))
-else:
-    model_kwargs = {'ctx': context, 'pretrained': False, 'classes': classes}
-    net = get_model(model_name, **model_kwargs)
-
-# initialization
-# if model_name.startswith('cifar') or model_name == 'default':
-#     net.initialize(mx.init.Xavier(), ctx=context)
-# else:
-#     net.initialize(mx.init.MSRAPrelu(), ctx=context)
-# net.initialize(mx.init.MSRAPrelu(), ctx=context)
-net.initialize(mx.init.Xavier(), ctx=context)
+net = load_model(model_name)
 
 # # no weight decay
 # for k, v in net.collect_params('.*beta|.*gamma|.*bias').items():
@@ -181,29 +191,51 @@ nd.waitall()
 if args.byz_test == 'kardam':
     grads_list = []
     lips_list = []
-    quantile_q = (args.nworkers-args.b) / args.nworkers
+    quantile_q = (args.nworkers-args.b) * 1.0 / args.nworkers
+elif args.byz_test == 'zeno++':
+    zeno_net = load_model(model_name)
+    zeno_trainer = gluon.Trainer(zeno_net.collect_params(), optimizer, optimizer_params)
+    zeno_trainer.set_learning_rate(0.001)
+    # warm up
+    for local_epoch in range(1):
+        for i, (data, label) in enumerate(val_data):
+            with ag.record():
+                outputs = zeno_net(data)
+                loss = loss_func(outputs, label)
+            loss.backward()
+            zeno_trainer.step(args.batchsize)
+            break
+        break
+    nd.waitall()
+
+accept_counter = 0
+gradient_counter = 0
 
 sum_delay = 0
 tic = time.time()
+# reset optimizer
+trainer = gluon.Trainer(net.collect_params(), optimizer, optimizer_params)
 for epoch in range(args.epochs):
 
     # lr decay
     if epoch in lr_decay_epoch:
         lr = lr * args.lr_decay
 
-    # reset optimizer
-    trainer = gluon.Trainer(net.collect_params(), optimizer, optimizer_params)
     trainer.set_learning_rate(lr)     
 
     # training
     for i, (data, label) in enumerate(train_data):
         # byzantine
-        if args.nbyz > 0 and args.byz_type == 'labelflip':
+        # if args.nbyz > 0 and ( epoch > 0 or (epoch == 0 and i >= args.nworkers) ) and args.byz_type == 'labelflip':
+        if args.nbyz > 0 and epoch > 0 and args.byz_type == 'labelflip':
             if random.randint(1, args.nworkers) <= args.nbyz:
                 label = label.copy()
                 label = args.classes - 1 - label
         # obtain previous model
-        model_idx = random.randint(0, len(params_prev_list)-1)
+        if len(params_prev_list)-1 - args.max_delay < 0:
+            model_idx = random.randint(0, len(params_prev_list)-1)
+        else:
+            model_idx = random.randint(len(params_prev_list)-1 - args.max_delay, len(params_prev_list)-1)
         params_prev = params_prev_list[model_idx]
         for param, param_prev in zip(net.collect_params().values(), params_prev):
             if param.grad_req != 'null':
@@ -215,15 +247,21 @@ for epoch in range(args.epochs):
             loss = loss_func(outputs, label)
         loss.backward()
         
-        if args.nbyz > 0 and args.byz_type == 'signflip':
-            for param in net.collect_params().values():
-                if param.grad_req != 'null':
-                    grad = param.grad()
-                    grad[:] = -grad
+        # if args.nbyz > 0 and ( epoch > 0 or (epoch == 0 and i >= args.nworkers) ) and args.byz_type == 'signflip':
+        if args.nbyz > 0 and epoch > 0 and args.byz_type == 'signflip':
+            if random.randint(1, args.nworkers) <= args.nbyz:
+                for param in net.collect_params().values():
+                    if param.grad_req != 'null':
+                        grad = param.grad()
+                        grad[:] = - args.byz_param_a * grad
 
+        gradient_counter = gradient_counter + 1
         if args.byz_test == 'kardam':
             byz_flag = True
-            if len(grad_list) > (args.nworkers // 3):
+            lips = 99999
+            # if len(grads_list) > (args.nworkers // 3):
+            # if len(grads_list) > 0:
+            if len(grads_list) >= args.nworkers:
                 accumulate_param = 0
                 accumulate_grad = 0
                 if model_idx != len(params_prev_list)-1:
@@ -239,11 +277,67 @@ for epoch in range(args.epochs):
                         accumulate_param = accumulate_param + nd.square(param_current - param_prev).sum()
                         accumulate_grad = accumulate_grad + nd.square(grad_current - grad_prev).sum()
                 lips = math.sqrt(accumulate_grad.asscalar()) / math.sqrt(accumulate_param.asscalar())
-                if lips <= np.quantile(lips_list, quantile_q):
+                # print((lips, np.quantile(lips_list, quantile_q)), flush=True)
+                if lips <= np.quantile(lips_list, quantile_q) * 1.1:
                     byz_flag = False
+                    accept_counter = accept_counter + 1
                 nd.waitall()
+            else:
+                byz_flag = False
+                accept_counter = accept_counter + 1
+        elif args.byz_test == 'zeno++':
+            zeno_max_delay = args.zeno_delay
+            zeno_rho = args.rho
+            zeno_epsilon = args.epsilon
+            byz_flag = True
+            # obtain previous model
+            if len(params_prev_list)-1 - zeno_max_delay < 0:
+                model_idx = random.randint(0, len(params_prev_list)-1)
+            else:
+                model_idx = random.randint(len(params_prev_list)-1 - zeno_max_delay, len(params_prev_list)-1)
+            params_prev = params_prev_list[model_idx]
+            for param, param_prev in zip(zeno_net.collect_params().values(), params_prev):
+                if param.grad_req != 'null':
+                    weight = param.data()
+                    weight[:] = param_prev
+            # compute g_r
+            zeno_trainer = gluon.Trainer(zeno_net.collect_params(), optimizer, optimizer_params)
+            zeno_trainer.set_learning_rate(lr) 
+            data_pair = next(val_data, None)
+            if data_pair is None:
+                val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='keep', num_workers=0)
+                data_pair = next(val_data, None)
+            with ag.record():
+                outputs = zeno_net(data_pair[0])
+                loss = loss_func(outputs, data_pair[1])
+            loss.backward()
+            nd.waitall()
+            # normalize g_r
+            param_square = 0
+            zeno_param_square = 0
+            for param, zeno_param in zip(net.collect_params().values(), zeno_net.collect_params().values()):
+                if param.grad_req != 'null':
+                    param_square = param_square + param.grad().square().sum()
+                    zeno_param_square = zeno_param_square + zeno_param.grad().square().sum()
+            c = math.sqrt( param_square.asscalar() / zeno_param_square.asscalar() )
+            for zeno_param in zeno_net.collect_params().values():
+                if zeno_param.grad_req != 'null':
+                    grad = zeno_param.grad()
+                    grad[:] = grad * c
+            # compute zeno score
+            zeno_innerprod = 0
+            zeno_square = param_square
+            for param, zeno_param in zip(net.collect_params().values(), zeno_net.collect_params().values()):
+                if param.grad_req != 'null':
+                    zeno_innerprod = zeno_innerprod + nd.sum(param.grad() * zeno_param.grad())
+            if lr * (zeno_innerprod.asscalar()) - zeno_rho * (zeno_square.asscalar()) + lr * zeno_epsilon >= 0:
+                byz_flag = False
+                accept_counter = accept_counter + 1
+            nd.waitall()
+
         else:
             byz_flag = False
+            accept_counter = accept_counter + 1
             
         # bring back the current model
         params_prev = params_prev_list[-1]
@@ -263,17 +357,16 @@ for epoch in range(args.epochs):
 
             # save model to queue
             params_prev_list.append([param.data().copy() for param in net.collect_params().values()])
-            if len(params_prev_list) > args.max_delay:
+            if len(params_prev_list) > args.nworkers * 2:
                 del params_prev_list[0]
 
             if args.byz_test == 'kardam':
-                grads_list.append([param.grad().copy() for param in net.collect_params().values()])
+                # update the list of gradients and lips constant
+                grads_list.append([param.grad().copy() if param.grad_req != 'null' else None for param in net.collect_params().values()])
                 lips_list.append(lips)
-                if len(grads_list) > args.max_delay:
+                if len(grads_list) > max(args.nworkers * 2, args.max_delay):
                     del grads_list[0]
                     del lips_list[0]
-
-            
         
             nd.waitall()
 
@@ -299,7 +392,7 @@ for epoch in range(args.epochs):
         _, crossentropy = train_cross_entropy.get()
 
         # logger.info('[Epoch %d] validation: acc-top1=%f acc-top5=%f, loss=%f, lr=%f, rho=%f, alpha=%f, max_delay=%d, mean_delay=%f, time=%f' % (epoch, top1, top5, crossentropy, trainer.learning_rate, rho, alpha, args.max_delay, sum_delay*1.0/(epoch+1), time.time()-tic))
-        logger.info('[Epoch %d] validation: acc-top1=%f acc-top5=%f, loss=%f, lr=%f, max_delay=%d, time=%f' % (epoch, top1, top5, crossentropy, trainer.learning_rate, args.max_delay, time.time()-tic))
+        logger.info('[Epoch %d] validation: acc-top1=%f acc-top5=%f, loss=%f, lr=%f, accept ratio=%f, max_delay=%d, time=%f' % (epoch, top1, top5, crossentropy, trainer.learning_rate, accept_counter/gradient_counter, args.max_delay, time.time()-tic))
         tic = time.time()
         
         nd.waitall()

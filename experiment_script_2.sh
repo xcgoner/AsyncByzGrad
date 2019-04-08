@@ -25,9 +25,9 @@ logdir=/homes/cx2/zeno_async/results
 # training data
 inputdir=$basedir/cifar10_zeno
 
-watchfile=$logdir/experiment_script_1.log
+watchfile=$logdir/experiment_script_2.log
 
-logfile=$logdir/experiment_script_1.txt
+logfile=$logdir/experiment_script_2.txt
 
 # prepare the dataset
 # python convert_cifar10_to_np_normalized_unbalanced.py --nsplit 100 --normalize 1 --step 8 --output $basedir/cifar10_unbalanced/
@@ -37,5 +37,5 @@ logfile=$logdir/experiment_script_1.txt
 
 # start training
 # python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --nworkers 10 --nbyz 0 --byz-type none --byz-test none --b 0 --batchsize 128 --lr 0.1 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 20 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
-python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --nworkers 10 --nbyz 3 --byz-type signflip --byz-test kardam --b 3 --batchsize 128 --lr 0.1 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 5 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
+python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --nworkers 10 --nbyz 0 --byz-type signflip --byz-test kardam --b 3 --batchsize 128 --lr 0.1 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 10 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
 # python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model cifar_resnet20_v2 --batchsize 128 --lr 0.1 --momentum 0.9 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 1 --interval 5 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
