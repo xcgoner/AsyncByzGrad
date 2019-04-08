@@ -32,6 +32,7 @@ parser.add_argument("--log", type=str, help="dir of the log file", default='trai
 parser.add_argument("--classes", type=int, help="number of classes", default=20)
 parser.add_argument("--nworkers", type=int, help="number of workers", default=20)
 parser.add_argument("--nbyz", type=int, help="number of Byzantine workers", default=2)
+parser.add_argument("--byz-type", type=str, help="type of Byzantine workers", choices=['labelflip', 'signflip'], default='labelflip')
 parser.add_argument("--b", type=int, help="number of trimmed workers", default=2)
 parser.add_argument("--model", type=str, help="model", default='mobilenetv2_1.0')
 parser.add_argument("--seed", type=int, help="random seed", default=733)
@@ -197,8 +198,8 @@ for epoch in range(args.epochs):
     # training
     for i, (data, label) in enumerate(train_data):
         # byzantine
-        if args.nbyz > 0:
-            if random.uniform(0,1) <= args.nbyz * 1.0 / args.nworkers:
+        if args.nbyz > 0 and args.byz_type == 'labelflip':
+            if random.randint(1, args.nworkers) <= args.nbyz:
                 label = label.copy()
                 label = args.classes - 1 - label
         # obtain previous model
@@ -214,6 +215,11 @@ for epoch in range(args.epochs):
             loss = loss_func(outputs, label)
         loss.backward()
         
+        if args.nbyz > 0 and args.byz_type == 'signflip':
+            for param in net.collect_params().values():
+                if param.grad_req != 'null':
+                    grad = param.grad()
+                    grad[:] = -grad
 
         if args.byz_test == 'kardam':
             byz_flag = True
