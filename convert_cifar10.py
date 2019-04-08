@@ -24,6 +24,8 @@ from mxnet.gluon.utils import download
 from mxnet.gluon import nn
 from mxnet.gluon.data.vision import transforms
 
+from gluoncv.data import transforms as gcv_transforms
+
 if __name__ == '__main__':
 
     
@@ -47,24 +49,36 @@ if __name__ == '__main__':
 
     dataset_name = 'cifar-10'
 
+    # transform_train = transforms.Compose([
+    #     # Randomly crop an area, and then resize it to be 32x32
+    #     transforms.RandomResizedCrop(32),
+    #     # Randomly flip the image horizontally
+    #     transforms.RandomFlipLeftRight(),
+    #     # Randomly jitter the brightness, contrast and saturation of the image
+    #     transforms.RandomColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
+    #     # Randomly adding noise to the image
+    #     transforms.RandomLighting(0.1),
+    #     # Transpose the image from height*width*num_channels to num_channels*height*width
+    #     # and map values from [0, 255] to [0,1]
+    #     transforms.ToTensor(),
+    #     # Normalize the image with mean and standard deviation calculated across all images
+    #     transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
+    # ])
+
+    # transform_test = transforms.Compose([
+    #     transforms.Resize(32),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
+    # ])
+
     transform_train = transforms.Compose([
-        # Randomly crop an area, and then resize it to be 32x32
-        transforms.RandomResizedCrop(32),
-        # Randomly flip the image horizontally
+        gcv_transforms.RandomCrop(32, pad=4),
         transforms.RandomFlipLeftRight(),
-        # Randomly jitter the brightness, contrast and saturation of the image
-        transforms.RandomColorJitter(brightness=0.1, contrast=0.1, saturation=0.1),
-        # Randomly adding noise to the image
-        transforms.RandomLighting(0.1),
-        # Transpose the image from height*width*num_channels to num_channels*height*width
-        # and map values from [0, 255] to [0,1]
         transforms.ToTensor(),
-        # Normalize the image with mean and standard deviation calculated across all images
         transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
     ])
 
     transform_test = transforms.Compose([
-        transforms.Resize(32),
         transforms.ToTensor(),
         transforms.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
     ])

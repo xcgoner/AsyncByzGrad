@@ -108,7 +108,8 @@ if model_name == 'default':
         net.add(gluon.nn.Flatten())
         # net.add(gluon.nn.Dense(512, activation="relu"))
         # net.add(gluon.nn.Dense(512, activation="relu"))
-        net.add(gluon.nn.Dense(512, activation="relu"))
+        net.add(gluon.nn.Dense(128, activation="relu"))
+        net.add(gluon.nn.Dense(128, activation="relu"))
         net.add(gluon.nn.Dropout(rate=0.25))
         net.add(gluon.nn.Dense(classes))
 else:
@@ -120,7 +121,8 @@ else:
 #     net.initialize(mx.init.Xavier(), ctx=context)
 # else:
 #     net.initialize(mx.init.MSRAPrelu(), ctx=context)
-net.initialize(mx.init.MSRAPrelu(), ctx=context)
+# net.initialize(mx.init.MSRAPrelu(), ctx=context)
+net.initialize(mx.init.Xavier(), ctx=context)
 
 # # no weight decay
 # for k, v in net.collect_params('.*beta|.*gamma|.*bias').items():
@@ -197,6 +199,7 @@ for epoch in range(args.epochs):
         # byzantine
         if args.nbyz > 0:
             if random.uniform(0,1) <= args.nbyz * 1.0 / args.nworkers:
+                label = label.copy()
                 label = args.classes - 1 - label
         # obtain previous model
         model_idx = random.randint(0, len(params_prev_list)-1)
@@ -247,7 +250,7 @@ for epoch in range(args.epochs):
         if byz_flag == False:
             # update
             # adaptive lr
-            trainer.set_learning_rate(lr / math.sqrt(len(params_prev_list) - model_idx)) 
+            # trainer.set_learning_rate(lr / math.sqrt(len(params_prev_list) - model_idx)) 
             trainer.step(args.batchsize)
 
             nd.waitall()
