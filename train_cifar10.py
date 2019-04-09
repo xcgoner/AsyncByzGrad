@@ -36,16 +36,15 @@ parser.add_argument("--byz-type", type=str, help="type of Byzantine workers", ch
 parser.add_argument("--byz-param-a", type=float, help="hyperparameter of Byzantine workers", default=10)
 parser.add_argument("--byz-param-b", type=float, help="hyperparameter of Byzantine workers", default=10)
 parser.add_argument("--byz-param-c", type=float, help="hyperparameter of Byzantine workers", default=10)
-parser.add_argument("--b", type=int, help="number of trimmed workers", default=2)
-parser.add_argument("--rho", type=float, help="rho of zeno", default=0)
-parser.add_argument("--epsilon", type=float, help="epsilon of zeno", default=0)
-parser.add_argument("--zeno-delay", type=int, help="delay of zeno", default=10)
 parser.add_argument("--model", type=str, help="model", default='mobilenetv2_1.0')
 parser.add_argument("--seed", type=int, help="random seed", default=733)
 parser.add_argument("--max-delay", type=int, help="maximum of global delay", default=10)
 parser.add_argument("--byz-test", type=str, help="none, kardam, zeno+, or zeno++", choices=['none', 'kardam', 'zeno+', 'zeno++'], default='none')
-parser.add_argument("--rho", type=float, help="rho", default=0.01)
-parser.add_argument("--epsilon", type=float, help="epsilon", default=0)
+parser.add_argument("--b", type=int, help="number of trimmed workers", default=2)
+parser.add_argument("--rho", type=float, help="rho of zeno", default=0)
+parser.add_argument("--epsilon", type=float, help="epsilon of zeno", default=0)
+parser.add_argument("--zeno-delay", type=int, help="delay of zeno", default=10)
+
  
 args = parser.parse_args()
 
@@ -166,7 +165,8 @@ test_train_data = gluon.data.DataLoader(test_train_dataset, batch_size=1000, shu
 
 # zeno validation
 val_dataset = load_data(validation_filename)
-val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='keep', num_workers=0)
+val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='rollover', num_workers=0)
+val_data_iter = iter(val_data)
 
 # warmup
 print('warm up', flush=True)
@@ -290,39 +290,41 @@ for epoch in range(args.epochs):
             zeno_rho = args.rho
             zeno_epsilon = args.epsilon
             byz_flag = True
-            # obtain previous model
-            if len(params_prev_list)-1 - zeno_max_delay < 0:
-                model_idx = random.randint(0, len(params_prev_list)-1)
-            else:
-                model_idx = random.randint(len(params_prev_list)-1 - zeno_max_delay, len(params_prev_list)-1)
-            params_prev = params_prev_list[model_idx]
-            for param, param_prev in zip(zeno_net.collect_params().values(), params_prev):
-                if param.grad_req != 'null':
-                    weight = param.data()
-                    weight[:] = param_prev
-            # compute g_r
-            zeno_trainer = gluon.Trainer(zeno_net.collect_params(), optimizer, optimizer_params)
-            zeno_trainer.set_learning_rate(lr) 
-            data_pair = next(val_data, None)
-            if data_pair is None:
-                val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='keep', num_workers=0)
-                data_pair = next(val_data, None)
-            with ag.record():
-                outputs = zeno_net(data_pair[0])
-                loss = loss_func(outputs, data_pair[1])
-            loss.backward()
-            nd.waitall()
-            # normalize g_r
+            if i % zeno_max_delay == 0:
+                # obtain previous model
+                # if len(params_prev_list)-1 - zeno_max_delay < 0:
+                #     model_idx = random.randint(0, len(params_prev_list)-1)
+                # else:
+                #     model_idx = random.randint(len(params_prev_list)-1 - zeno_max_delay, len(params_prev_list)-1)
+                model_idx = len(params_prev_list)-1
+                params_prev = params_prev_list[model_idx]
+                for param, param_prev in zip(zeno_net.collect_params().values(), params_prev):
+                    if param.grad_req != 'null':
+                        weight = param.data()
+                        weight[:] = param_prev
+                # compute g_r
+                zeno_trainer = gluon.Trainer(zeno_net.collect_params(), optimizer, optimizer_params)
+                zeno_trainer.set_learning_rate(lr) 
+                data_pair = next(val_data_iter, None)
+                if data_pair is None:
+                    val_data_iter = iter(val_data)
+                    data_pair = next(val_data_iter, None)
+                with ag.record():
+                    outputs = zeno_net(data_pair[0])
+                    loss = loss_func(outputs, data_pair[1])
+                loss.backward()
+                nd.waitall()
+            # normalize g
             param_square = 0
             zeno_param_square = 0
             for param, zeno_param in zip(net.collect_params().values(), zeno_net.collect_params().values()):
                 if param.grad_req != 'null':
                     param_square = param_square + param.grad().square().sum()
                     zeno_param_square = zeno_param_square + zeno_param.grad().square().sum()
-            c = math.sqrt( param_square.asscalar() / zeno_param_square.asscalar() )
-            for zeno_param in zeno_net.collect_params().values():
-                if zeno_param.grad_req != 'null':
-                    grad = zeno_param.grad()
+            c = math.sqrt( zeno_param_square.asscalar() / param_square.asscalar() )
+            for param in net.collect_params().values():
+                if param.grad_req != 'null':
+                    grad = param.grad()
                     grad[:] = grad * c
             # compute zeno score
             zeno_innerprod = 0
@@ -330,6 +332,7 @@ for epoch in range(args.epochs):
             for param, zeno_param in zip(net.collect_params().values(), zeno_net.collect_params().values()):
                 if param.grad_req != 'null':
                     zeno_innerprod = zeno_innerprod + nd.sum(param.grad() * zeno_param.grad())
+            # print((c, zeno_innerprod), flush=True)
             if lr * (zeno_innerprod.asscalar()) - zeno_rho * (zeno_square.asscalar()) + lr * zeno_epsilon >= 0:
                 byz_flag = False
                 accept_counter = accept_counter + 1
