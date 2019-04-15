@@ -39,7 +39,7 @@ parser.add_argument("--byz-param-c", type=float, help="hyperparameter of Byzanti
 parser.add_argument("--model", type=str, help="model", default='mobilenetv2_1.0')
 parser.add_argument("--seed", type=int, help="random seed", default=733)
 parser.add_argument("--max-delay", type=int, help="maximum of global delay", default=10)
-parser.add_argument("--byz-test", type=str, help="none, kardam, zeno+, or zeno++", choices=['none', 'kardam', 'zeno+', 'zeno++'], default='none')
+parser.add_argument("--byz-test", type=str, help="none, kardam, zeno+, or zeno++", choices=['none', 'kardam', 'zeno++'], default='none')
 parser.add_argument("--b", type=int, help="number of trimmed workers", default=2)
 parser.add_argument("--rho", type=float, help="rho of zeno", default=0)
 parser.add_argument("--epsilon", type=float, help="epsilon of zeno", default=0)
@@ -210,6 +210,11 @@ elif args.byz_test == 'zeno++':
 
 accept_counter = 0
 gradient_counter = 0
+false_positive = 0
+false_negative = 0
+positive = 0.0001
+negative = 0.0001
+
 
 sum_delay = 0
 tic = time.time()
@@ -227,8 +232,10 @@ for epoch in range(args.epochs):
     for i, (data, label) in enumerate(train_data):
         # byzantine
         # if args.nbyz > 0 and ( epoch > 0 or (epoch == 0 and i >= args.nworkers) ) and args.byz_type == 'labelflip':
+        positive_flag = False
         if args.nbyz > 0 and epoch > 0 and args.byz_type == 'labelflip':
             if random.randint(1, args.nworkers) <= args.nbyz:
+                positive_flag = True
                 label = label.copy()
                 label = args.classes - 1 - label
         # obtain previous model
@@ -250,6 +257,7 @@ for epoch in range(args.epochs):
         # if args.nbyz > 0 and ( epoch > 0 or (epoch == 0 and i >= args.nworkers) ) and args.byz_type == 'signflip':
         if args.nbyz > 0 and epoch > 0 and args.byz_type == 'signflip':
             if random.randint(1, args.nworkers) <= args.nbyz:
+                positive_flag = True
                 for param in net.collect_params().values():
                     if param.grad_req != 'null':
                         grad = param.grad()
@@ -341,6 +349,16 @@ for epoch in range(args.epochs):
         else:
             byz_flag = False
             accept_counter = accept_counter + 1
+
+        if positive_flag == True:
+            positive = positive + 1
+        else:
+            negative = negative + 1
+        
+        if positive_flag == False and byz_flag == True:
+            false_positive = false_positive + 1
+        if positive_flag == True and byz_flag == False:
+            false_negative = false_negative + 1
             
         # bring back the current model
         params_prev = params_prev_list[-1]
@@ -395,7 +413,7 @@ for epoch in range(args.epochs):
         _, crossentropy = train_cross_entropy.get()
 
         # logger.info('[Epoch %d] validation: acc-top1=%f acc-top5=%f, loss=%f, lr=%f, rho=%f, alpha=%f, max_delay=%d, mean_delay=%f, time=%f' % (epoch, top1, top5, crossentropy, trainer.learning_rate, rho, alpha, args.max_delay, sum_delay*1.0/(epoch+1), time.time()-tic))
-        logger.info('[Epoch %d] validation: acc-top1=%f acc-top5=%f, loss=%f, lr=%f, accept ratio=%f, max_delay=%d, time=%f' % (epoch, top1, top5, crossentropy, trainer.learning_rate, accept_counter/gradient_counter, args.max_delay, time.time()-tic))
+        logger.info('[Epoch %d] validation: acc-top1=%f acc-top5=%f, loss=%f, fp=%f, fn=%f, lr=%f, accept ratio=%f, max_delay=%d, time=%f' % (epoch, top1, top5, crossentropy, false_positive/negative, false_negative/positive, trainer.learning_rate, accept_counter/gradient_counter, args.max_delay, time.time()-tic))
         tic = time.time()
         
         nd.waitall()
