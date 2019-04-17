@@ -20,7 +20,8 @@ import argparse
 import pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-d", "--dir", type=str, help="dir of the data", required=True)
+parser.add_argument("--dir", type=str, help="dir of the data", required=True)
+parser.add_argument("--gpu", type=int, help="index of gpu to use", default=-1)
 parser.add_argument("--batchsize", type=int, help="batchsize", default=50)
 parser.add_argument("--epochs", type=int, help="number of epochs", default=100)
 parser.add_argument("--interval", type=int, help="log interval (epochs)", default=10)
@@ -28,7 +29,7 @@ parser.add_argument("--lr", type=float, help="learning rate", default=0.001)
 parser.add_argument("--lr-decay", type=float, help="lr decay rate", default=0.5)
 parser.add_argument("--lr-decay-epoch", type=str, help="lr decay epoch", default='2000')
 parser.add_argument("--momentum", type=float, help="momentum", default=0)
-parser.add_argument("--log", type=str, help="dir of the log file", default='train_cifar100.log')
+parser.add_argument("--log", type=str, help="dir of the log file", default='train_cifar10.log')
 parser.add_argument("--classes", type=int, help="number of classes", default=20)
 parser.add_argument("--nworkers", type=int, help="number of workers", default=20)
 parser.add_argument("--nbyz", type=int, help="number of Byzantine workers", default=2)
@@ -73,7 +74,8 @@ training_filename = os.path.join(train_dir, 'train_data_000.pkl')
 testing_filename = os.path.join(val_dir, 'test_data.pkl')
 validation_filename = os.path.join(val_dir, 'val_data.pkl')
 
-context = mx.cpu()
+# context = mx.cpu()
+context = [mx.gpu(args.gpu)] if args.gpu >= 0 else [mx.cpu()]
 
 classes = args.classes
 
@@ -155,17 +157,17 @@ acc_top5 = mx.metric.TopKAccuracy(5)
 train_cross_entropy = mx.metric.CrossEntropy()
 
 train_dataset = load_data(training_filename)
-train_data = gluon.data.DataLoader(train_dataset, batch_size=args.batchsize, shuffle=True, last_batch='rollover', num_workers=0)
+train_data = gluon.data.DataLoader(train_dataset, batch_size=args.batchsize, shuffle=True, last_batch='rollover', num_workers=1)
 
 test_test_dataset = load_data(testing_filename)
-test_test_data = gluon.data.DataLoader(test_test_dataset, batch_size=1000, shuffle=False, last_batch='keep', num_workers=0)
+test_test_data = gluon.data.DataLoader(test_test_dataset, batch_size=args.batchsize, shuffle=False, last_batch='keep', num_workers=1)
 
 test_train_dataset = load_data(training_filename)
-test_train_data = gluon.data.DataLoader(test_train_dataset, batch_size=1000, shuffle=False, last_batch='keep', num_workers=0)
+test_train_data = gluon.data.DataLoader(test_train_dataset, batch_size=args.batchsize, shuffle=False, last_batch='keep', num_workers=1)
 
 # zeno validation
 val_dataset = load_data(validation_filename)
-val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='rollover', num_workers=0)
+val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='rollover', num_workers=1)
 val_data_iter = iter(val_data)
 
 # warmup
@@ -175,6 +177,8 @@ trainer.set_learning_rate(0.001)
 
 for local_epoch in range(1):
     for i, (data, label) in enumerate(train_data):
+        data = data.as_in_context(context[0])
+        label = label.as_in_context(context[0])
         with ag.record():
             outputs = net(data)
             loss = loss_func(outputs, label)
@@ -199,6 +203,8 @@ elif args.byz_test == 'zeno++':
     # warm up
     for local_epoch in range(1):
         for i, (data, label) in enumerate(val_data):
+            data = data.as_in_context(context[0])
+            label = label.as_in_context(context[0])
             with ag.record():
                 outputs = zeno_net(data)
                 loss = loss_func(outputs, label)
@@ -230,6 +236,8 @@ for epoch in range(args.epochs):
 
     # training
     for i, (data, label) in enumerate(train_data):
+        data = data.as_in_context(context[0])
+        label = label.as_in_context(context[0])
         # byzantine
         # if args.nbyz > 0 and ( epoch > 0 or (epoch == 0 and i >= args.nworkers) ) and args.byz_type == 'labelflip':
         positive_flag = False
@@ -318,8 +326,8 @@ for epoch in range(args.epochs):
                     val_data_iter = iter(val_data)
                     data_pair = next(val_data_iter, None)
                 with ag.record():
-                    outputs = zeno_net(data_pair[0])
-                    loss = loss_func(outputs, data_pair[1])
+                    outputs = zeno_net(data_pair[0].as_in_context(context[0]))
+                    loss = loss_func(outputs, data_pair[1].as_in_context(context[0]))
                 loss.backward()
                 nd.waitall()
             # normalize g
@@ -400,12 +408,16 @@ for epoch in range(args.epochs):
         train_cross_entropy.reset()
         # get accuracy on testing data
         for i, (data, label) in enumerate(test_test_data):
+            data = data.as_in_context(context[0])
+            label = label.as_in_context(context[0])
             outputs = net(data)
             acc_top1.update(label, outputs)
             acc_top5.update(label, outputs)
 
         # get cross entropy loss on traininig data
         for i, (data, label) in enumerate(test_train_data):
+            data = data.as_in_context(context[0])
+            label = label.as_in_context(context[0])
             outputs = net(data)
             train_cross_entropy.update(label, nd.softmax(outputs))
 
