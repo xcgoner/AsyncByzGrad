@@ -342,7 +342,9 @@ for epoch in range(args.epochs):
                     zeno_innerprod = zeno_innerprod + nd.sum(param.grad() * zeno_param.grad())
             # print((c, zeno_innerprod), flush=True)
             # if lr * (zeno_innerprod.asscalar()) - zeno_rho * (zeno_square.asscalar()) + lr * zeno_epsilon >= 0:
-            if args.lr * (zeno_innerprod.asscalar()) - zeno_rho * (zeno_square.asscalar()) + args.lr * zeno_epsilon >= 0:
+            score = args.lr * (zeno_innerprod.asscalar()) - zeno_rho * (zeno_square.asscalar()) + args.lr * zeno_epsilon
+            # print(score, flush=True)
+            if score >= 0:
                 byz_flag = False
                 accept_counter = accept_counter + 1
             nd.waitall()
