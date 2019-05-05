@@ -171,7 +171,7 @@ val_data_iter = iter(val_data)
 # warmup
 print('warm up', flush=True)
 trainer = gluon.Trainer(net.collect_params(), optimizer, optimizer_params)
-trainer.set_learning_rate(0.001)
+trainer.set_learning_rate(0.01)
 
 for local_epoch in range(1):
     for i, (data, label) in enumerate(train_data):

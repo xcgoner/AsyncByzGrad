@@ -25,16 +25,30 @@ logdir=/homes/cx2/zeno_async/results
 # training data
 inputdir=$basedir/cifar10_zeno
 
-watchfile=$logdir/experiment_script_4.log
-
-logfile=$logdir/experiment_script_4.txt
+watchfile=$logdir/exp_37.log
 
 # prepare the dataset
 # python convert_cifar10_to_np_normalized_unbalanced.py --nsplit 100 --normalize 1 --step 8 --output $basedir/cifar10_unbalanced/
 # python convert_cifar10_to_np_normalized.py --nsplit 100 --normalize 1 --output $basedir/cifar10_balanced/
 
-> $logfile
+model="default"
+lr=0.1
+method="zeno++"
+byz="signflip"
+rho=0.002
+epsilon=0.1
 
-# start training
-# python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --nworkers 10 --nbyz 3 --byz-type signflip --byz-test zeno++ --rho 0.001 --epsilon 0 --zeno-delay 5 --batchsize 128 --lr 0.1 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 10 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
-python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model default --nworkers 10 --nbyz 6 --byz-type signflip --byz-test zeno++ --rho 0.001 --epsilon 0 --zeno-delay 15 --batchsize 128 --lr 0.1 --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed 337 --max-delay 15 --dir $inputdir --log $logfile 2>&1 | tee $watchfile
+zenodelay=20
+
+for maxdelay in 15
+do
+    for nbyz in 8 6 4 2
+    do
+        logfile=$logdir/zenopp_tunedelay_${model}_${lr}_${method}_${maxdelay}_${byz}_${nbyz}_${rho}_${epsilon}_${zenodelay}.txt
+        > $logfile
+        for seed in 337 773 557 755 
+        do
+            python /homes/cx2/zeno_async/zeno_async/train_cifar10.py --classes 10 --model ${model} --nworkers 10 --nbyz ${nbyz} --byz-type ${byz} --byz-test ${method} --rho ${rho} --epsilon ${epsilon} --zeno-delay ${zenodelay} --batchsize 128 --lr ${lr} --lr-decay 0.1 --lr-decay-epoch 100,150 --epochs 200 --seed ${seed} --max-delay ${maxdelay} --dir $inputdir --log $logfile 2>&1 | tee $watchfile
+        done
+    done
+done
