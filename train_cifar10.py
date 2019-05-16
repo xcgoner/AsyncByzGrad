@@ -21,7 +21,7 @@ import pickle
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--dir", type=str, help="dir of the data", required=True)
-parser.add_argument("--batchsize", type=int, help="batchsize", default=50)
+parser.add_argument("--batchsize", type=int, help="batchsize", default=128)
 parser.add_argument("--epochs", type=int, help="number of epochs", default=100)
 parser.add_argument("--interval", type=int, help="log interval (epochs)", default=10)
 parser.add_argument("--lr", type=float, help="learning rate", default=0.001)
@@ -44,6 +44,7 @@ parser.add_argument("--b", type=int, help="number of trimmed workers", default=2
 parser.add_argument("--rho", type=float, help="rho of zeno", default=0)
 parser.add_argument("--epsilon", type=float, help="epsilon of zeno", default=0)
 parser.add_argument("--zeno-delay", type=int, help="delay of zeno", default=10)
+parser.add_argument("--zeno-batchsize", type=int, help="batchsize of zeno", default=128)
 
  
 args = parser.parse_args()
@@ -165,7 +166,7 @@ test_train_data = gluon.data.DataLoader(test_train_dataset, batch_size=1000, shu
 
 # zeno validation
 val_dataset = load_data(validation_filename)
-val_data = gluon.data.DataLoader(val_dataset, batch_size=args.batchsize, shuffle=True, last_batch='rollover', num_workers=0)
+val_data = gluon.data.DataLoader(val_dataset, batch_size=args.zeno_batchsize, shuffle=True, last_batch='rollover', num_workers=0)
 val_data_iter = iter(val_data)
 
 # warmup
